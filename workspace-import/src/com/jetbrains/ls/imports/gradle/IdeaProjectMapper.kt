@@ -147,7 +147,16 @@ internal class IdeaProjectMapper {
                     scriptTemplatesClasspath = null,
                     copyJsLibraryFiles = false,
                     outputDirectoryForJsLibraryFiles = null,
-                    targetPlatform = null,
+                    // Derive the target platform from the extracted Gradle jvmTarget so the
+                    // analyzer doesn't fall back to JvmPlatforms.unspecifiedJvmPlatform (≈ JVM 1.8)
+                    // when JpsWorkspaceImporter serializes `targetPlatform.toString()`. Without
+                    // this, FIR resolution fails for any code targeting JDK > 1.8.
+                    targetPlatform = compilerSettings.jvmTarget?.let { jvmTargetStr ->
+                        // KotlinMetadataModelBuilder strips the "JVM_" prefix, but be defensive
+                        // in case future plugin versions emit the raw enum name.
+                        val ver = jvmTargetStr.removePrefix("JVM_")
+                        "JVM $ver"
+                    } ?: "JVM 17",
                     externalSystemRunTasks = emptyList(),
                     version = 5,
                     flushNeeded = false
