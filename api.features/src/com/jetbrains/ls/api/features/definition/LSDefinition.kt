@@ -7,6 +7,7 @@ import com.jetbrains.ls.api.core.LSServer
 import com.jetbrains.ls.api.features.LSConfiguration
 import com.jetbrains.ls.api.features.partialResults.LSConcurrentResponseHandler
 import com.jetbrains.ls.api.features.utils.traceProvider
+import com.jetbrains.ls.api.features.utils.withJarUrisRewritten
 import com.jetbrains.lsp.implementation.LspHandlerContext
 import com.jetbrains.lsp.protocol.DefinitionParams
 import com.jetbrains.lsp.protocol.Location
@@ -25,7 +26,7 @@ object LSDefinition {
                 tracer.traceProvider(
                     spanName = "provider.definition",
                     provider = definitionProvider,
-                    resultsFlow = definitionProvider.provideDefinitions(params),
+                    resultsFlow = definitionProvider.provideDefinitions(params).withJarUrisRewritten(),
                 )
             },
         )

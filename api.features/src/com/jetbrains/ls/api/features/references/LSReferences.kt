@@ -4,6 +4,7 @@ package com.jetbrains.ls.api.features.references
 import com.jetbrains.ls.api.core.LSServer
 import com.jetbrains.ls.api.features.LSConfiguration
 import com.jetbrains.ls.api.features.partialResults.LSConcurrentResponseHandler
+import com.jetbrains.ls.api.features.utils.withJarUrisRewritten
 import com.jetbrains.lsp.implementation.LspHandlerContext
 import com.jetbrains.lsp.protocol.Location
 import com.jetbrains.lsp.protocol.ReferenceParams
@@ -15,7 +16,7 @@ object LSReferences {
             partialResultToken = params.partialResultToken,
             resultSerializer = Location.serializer(),
             providers = configuration.entriesFor<LSReferencesProvider>(params.textDocument),
-            getResults = { referencesProvider -> referencesProvider.getReferences(params) },
+            getResults = { referencesProvider -> referencesProvider.getReferences(params).withJarUrisRewritten() },
         )
     }
 }
