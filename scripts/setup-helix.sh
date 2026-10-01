@@ -9,9 +9,12 @@
 #      install — without this, the bundled native libraries (libfilewatcher_jni
 #      etc.) refuse to load.
 #   3. Fetches `kotlinc` if it isn't already on PATH.
-#   4. Compiles the two patched sources from this repo against the cask's bundled
-#      classpath (so the bytecode stays binary-compatible with closed-source
-#      jars in the same install).
+#   4. Compiles the two patched sources from scripts/cask-src/ against the
+#      cask's bundled classpath (so the bytecode stays binary-compatible with
+#      closed-source jars in the same install). Those are CASK-PINNED copies of
+#      the repo sources: the live repo files track upstream HEAD, which gains
+#      APIs ahead of cask releases (e.g. LSP-1097's languageVersion) and then
+#      no longer compiles against the released jars. See cask-src/*.kt headers.
 #   5. Backs up the affected jars to `<jar>.orig.bak` (only on the first run —
 #      subsequent runs preserve the original backup) and swaps the recompiled
 #      classes in place.
@@ -105,8 +108,8 @@ ok "$(kotlinc -version 2>&1 | head -1)"
 # ─────────────────────────────────────────────────────────────────────────────
 step "Compiling patched sources…"
 
-POSITION_KT="$REPO_ROOT/features-impl/common/src/com/jetbrains/ls/api/features/impl/common/utils/position.kt"
-PROJECT_MAPPER_KT="$REPO_ROOT/workspace-import/src/com/jetbrains/ls/imports/gradle/IdeaProjectMapper.kt"
+POSITION_KT="$REPO_ROOT/scripts/cask-src/position.kt"
+PROJECT_MAPPER_KT="$REPO_ROOT/scripts/cask-src/IdeaProjectMapper.kt"
 [[ -f "$POSITION_KT" ]] || die "missing $POSITION_KT (run from a checkout of the repo)"
 [[ -f "$PROJECT_MAPPER_KT" ]] || die "missing $PROJECT_MAPPER_KT"
 
