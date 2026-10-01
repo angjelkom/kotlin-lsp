@@ -411,8 +411,8 @@ internal class IdeaProjectMapper {
             return projectJavaLevel
         }
         val moduleJavaLevel = when {
-            sourceSet.isCompileTaskSpecified() -> sourceSet?.javaSettings?.sourceCompatibility
             sourceSet.isToolchainSpecified() -> sourceSet?.javaSettings?.toolchainVersion.toString()
+            sourceSet.isCompileTaskSpecified() -> sourceSet?.javaSettings?.targetCompatibility ?: sourceSet?.javaSettings?.sourceCompatibility
             javaLanguageSettings.isSpecified() -> javaLanguageSettings?.targetBytecodeVersion?.getJavaVersion()
             else -> null
         }
@@ -432,7 +432,7 @@ internal class IdeaProjectMapper {
     }
 
     private fun ModuleSourceSet?.isCompileTaskSpecified(): Boolean {
-        return this != null && javaSettings.sourceCompatibility != null
+        return this != null && (javaSettings.sourceCompatibility != null || javaSettings.targetCompatibility != null)
     }
 
     private fun JavaVersion.getJavaVersion(): String {
@@ -471,7 +471,7 @@ internal class IdeaProjectMapper {
             }
             SdkData(
                 name = module.jdkName,
-                type = "JavaSDK",
+                type = "jdk",
                 homePath = jdkSettings.javaHome?.path,
                 version = jdkSettings.javaVersion?.name,
                 additionalData = ""
@@ -484,7 +484,7 @@ internal class IdeaProjectMapper {
     private fun IdeaProject.getProjectJdk(): SdkData {
         return SdkData(
             name = jdkName,
-            type = "JavaSDK",
+            type = "jdk",
             homePath = javaLanguageSettings?.jdk?.javaHome?.path,
             version = javaLanguageSettings?.jdk?.javaVersion?.majorVersion?.let { "JDK_$it" },
             additionalData = ""
