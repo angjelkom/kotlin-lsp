@@ -1,25 +1,11 @@
-// CASK-PINNED COPY — compiled by scripts/setup-helix.sh against the Homebrew
-// kotlin-lsp cask's bundled jars (currently 262.4739.0). See the header in
-// cask-src/IdeaProjectMapper.kt for why these copies exist.
-//
-// Snapshot of features-impl/common/src/.../utils/position.kt as of the cask
-// release (upstream later moved these helpers into closed-source core; on the
-// branch the fix lives in api.features/src/.../utils/jarUri.kt). Carries this
-// branch's fix: jar:// → file:// URI rewriting for goto-def.
 // Copyright 2000-2025 JetBrains s.r.o. and contributors. Use of this source code is governed by the Apache 2.0 license.
-package com.jetbrains.ls.api.features.impl.common.utils
+package com.jetbrains.ls.api.features.utils
 
-import com.intellij.openapi.editor.Document
-import com.intellij.openapi.util.TextRange
-import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.openapi.vfs.findDocument
-import com.intellij.psi.PsiElement
-import com.intellij.psi.PsiNameIdentifierOwner
-import com.jetbrains.ls.api.core.util.toLspRange
-import com.jetbrains.ls.api.core.util.uri
 import com.jetbrains.lsp.protocol.DocumentUri
 import com.jetbrains.lsp.protocol.Location
 import com.jetbrains.lsp.protocol.URI
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,9 +13,8 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.zip.ZipFile
 
-internal fun TextRange.toLspLocation(file: VirtualFile, document: Document): Location {
-    return Location(DocumentUri(rewriteJarUri(file.uri)), toLspRange(document))
-}
+internal fun Flow<Location>.withJarUrisRewritten(): Flow<Location> =
+    map { Location(DocumentUri(rewriteJarUri(it.uri.uri)), it.range) }
 
 /**
  * Returns a `file://` URI that points at the contents of [uri] when [uri] uses the
@@ -84,20 +69,4 @@ fun rewriteJarUri(uri: URI): URI {
 private val jarExtractCacheRoot: Path by lazy {
     Path.of(System.getProperty("user.home"), ".cache", "kotlin-lsp-extracted")
         .also { Files.createDirectories(it) }
-}
-
-fun PsiElement.getLspLocation(): Location? {
-    val textRange = textRange ?: return null
-    val virtualFile = containingFile?.virtualFile ?: return null
-    val document = virtualFile.findDocument() ?: return null
-    return textRange.toLspLocation(virtualFile, document)
-}
-
-fun PsiElement.getLspLocationForDefinition(): Location? {
-    val navigationElement = getNavigationElement()
-    if (navigationElement != null && navigationElement != this) {
-        return navigationElement.getLspLocationForDefinition()
-    }
-    (this as? PsiNameIdentifierOwner)?.nameIdentifier?.getLspLocation()?.let { return it }
-    return getLspLocation()
 }

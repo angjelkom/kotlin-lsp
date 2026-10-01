@@ -9,12 +9,11 @@
 #      install — without this, the bundled native libraries (libfilewatcher_jni
 #      etc.) refuse to load.
 #   3. Fetches `kotlinc` if it isn't already on PATH.
-#   4. Compiles the two patched sources from scripts/cask-src/ against the
-#      cask's bundled classpath (so the bytecode stays binary-compatible with
-#      closed-source jars in the same install). Those are CASK-PINNED copies of
-#      the repo sources: the live repo files track upstream HEAD, which gains
-#      APIs ahead of cask releases (e.g. LSP-1097's languageVersion) and then
-#      no longer compiles against the released jars. See cask-src/*.kt headers.
+#   4. Compiles the patched sources in scripts/cask-src/ against the cask's
+#      bundled classpath and JBR (so the bytecode stays binary-compatible with
+#      closed-source jars in the same install). Those are copies pinned to the
+#      cask's release tag, not the live repo files — see cask-src/README.md.
+#      Refuses to run against any other cask version.
 #   5. Backs up the affected jars to `<jar>.orig.bak` (only on the first run —
 #      subsequent runs preserve the original backup) and swaps the recompiled
 #      classes in place.
@@ -31,6 +30,8 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Cask release that scripts/cask-src/ was regenerated from (tag kotlin-lsp/v<this>).
+PINNED_VERSION="263.4702.0"
 DRY_RUN=0
 
 for arg in "$@"; do
@@ -75,6 +76,10 @@ INSTALL_DIR="$CASK_ROOT/$VERSION/kotlin-server-$VERSION"
 
 ok "found kotlin-lsp $VERSION at $INSTALL_DIR"
 
+# The pinned copies replace whole classes; swapping them into a different
+# release would silently roll back whatever that release changed in them.
+[[ "$VERSION" == "$PINNED_VERSION" ]] || die "scripts/cask-src/ is pinned to $PINNED_VERSION but the cask is $VERSION — regenerate it (see scripts/cask-src/README.md)"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 2. Clear Gatekeeper quarantine
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,30 +113,34 @@ ok "$(kotlinc -version 2>&1 | head -1)"
 # ─────────────────────────────────────────────────────────────────────────────
 step "Compiling patched sources…"
 
-POSITION_KT="$REPO_ROOT/scripts/cask-src/position.kt"
-PROJECT_MAPPER_KT="$REPO_ROOT/scripts/cask-src/IdeaProjectMapper.kt"
-[[ -f "$POSITION_KT" ]] || die "missing $POSITION_KT (run from a checkout of the repo)"
-[[ -f "$PROJECT_MAPPER_KT" ]] || die "missing $PROJECT_MAPPER_KT"
+CASK_SRC="$REPO_ROOT/scripts/cask-src"
+[[ -f "$CASK_SRC/IdeaProjectMapper.kt" ]] || die "missing $CASK_SRC (run from a checkout of the repo)"
 
 WORKSPACE_IMPORT_JAR="$INSTALL_DIR/plugins/kotlin.lsp/lib/modules/language-server.workspace-import.jar"
-COMMON_JAR="$INSTALL_DIR/lib/language-server.api.features.impl.common.jar"
+FEATURES_JAR="$INSTALL_DIR/lib/language-server.api.features.jar"
+JBR_HOME="$INSTALL_DIR/jbr/Contents/Home"
 [[ -f "$WORKSPACE_IMPORT_JAR" ]] || die "missing $WORKSPACE_IMPORT_JAR"
-[[ -f "$COMMON_JAR" ]] || die "missing $COMMON_JAR"
+[[ -f "$FEATURES_JAR" ]] || die "missing $FEATURES_JAR"
+[[ -f "$JBR_HOME/release" ]] || die "missing bundled JBR at $JBR_HOME"
+
+# The cask's bytecode targets its bundled JBR; kotlinc refuses to inline it
+# into anything older, so match that JVM version.
+JVM_TARGET="$(sed -n 's/^JAVA_VERSION="\([0-9]*\).*/\1/p' "$JBR_HOME/release")"
 
 OUT_DIR="$(mktemp -d -t kotlin-lsp-setup)"
 trap 'rm -rf "$OUT_DIR"' EXIT
 
 CP="$(find "$INSTALL_DIR/lib" "$INSTALL_DIR/plugins" -name '*.jar' 2>/dev/null | paste -sd ':' -)"
-FRIEND_JAR="$WORKSPACE_IMPORT_JAR"
 
-# IdeaProjectMapper references internal symbols in its own module, so we use
-# -Xfriend-paths so kotlinc accepts them.
+# The patched sources reference internal symbols of their own modules
+# (e.g. traceProvider), so -Xfriend-paths lets kotlinc accept them.
 run "kotlinc -classpath '$CP' \
-    -Xfriend-paths='$FRIEND_JAR' \
+    -jdk-home '$JBR_HOME' \
+    -Xfriend-paths='$WORKSPACE_IMPORT_JAR,$FEATURES_JAR' \
     -d '$OUT_DIR' \
-    -nowarn -jvm-target 17 -Xskip-prerelease-check \
-    '$PROJECT_MAPPER_KT' '$POSITION_KT'"
-ok "compiled to $OUT_DIR"
+    -nowarn -jvm-target $JVM_TARGET -Xskip-prerelease-check \
+    '$CASK_SRC'/*.kt"
+ok "compiled to $OUT_DIR (jvm-target $JVM_TARGET)"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 5. Swap classes into the bundled jars (preserving backups)
@@ -161,13 +170,14 @@ backup_once "$WORKSPACE_IMPORT_JAR"
 )
 ok "patched $(basename "$WORKSPACE_IMPORT_JAR")"
 
-backup_once "$COMMON_JAR"
+# jar:// → file:// rewriting: the new JarUriKt helpers plus the definition,
+# typeDefinition, implementation and references handlers that call them.
+backup_once "$FEATURES_JAR"
 (
     cd "$OUT_DIR"
-    run "jar uf '$COMMON_JAR' \
-        com/jetbrains/ls/api/features/impl/common/utils/PositionKt.class"
+    run "jar uf '$FEATURES_JAR' \$(find com/jetbrains/ls/api/features -name '*.class')"
 )
-ok "patched $(basename "$COMMON_JAR")"
+ok "patched $(basename "$FEATURES_JAR")"
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Done
